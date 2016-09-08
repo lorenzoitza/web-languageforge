@@ -7,8 +7,7 @@ use Api\Model\Shared\Rights\SystemRoles;
 use Api\Model\UserModel;
 use Api\Model\UserListModel;
 use Api\Model\UserModelMongoMapper;
-use Api\Model\UserProfileModel;
-
+//use Api\Model\UserProfileModel;
 
 (php_sapi_name() == 'cli') or exit('this script must be run on the command-line');
 
@@ -19,8 +18,7 @@ class FixUsersMissingSiteRole
     public static function run($mode = 'test')
     {
         $testMode = ($mode != 'run');
-        // TODO: Add "AND never logged in" criteria DDW 2016-09
-        print("Remove users who have no siteRole AND are not system admins\n\n");
+        print("Remove users who have no siteRole AND are not system admins AND never logged in\n\n");
 
         $userlist = new CustomUserListModel();
         $userlist->read();
@@ -28,13 +26,16 @@ class FixUsersMissingSiteRole
         print "Found " . count($userlist->entries) . " users in the userlist\n";
 
         $usersMissingSiteRole = 0;
+        $now = new \DateTime();
         foreach ($userlist->entries as $userParams) { // foreach user from the custom list
             // if last_login has any valid meaning, we need UserProfileModel.  Otherwise, can use UserModel
-            $user = new UserProfileModel($userParams['id']);
+            $user = new UserModel($userParams['id']);
 
+            // Since UserProfileModel::last_login isn't being populated, we use the following criteria that a user never logged in:
+            // emailPending (account never activated), no username, and validationExpirationDate expired
             if (($user->role != SystemRoles::SYSTEM_ADMIN) &&
-                (count(array_keys($user->siteRole->getArrayCopy())) == 0)
-            ) {
+                (count(array_keys($user->siteRole->getArrayCopy())) == 0) &&
+                (!empty($user->emailPending) && empty($user->username) && ($user->validationExpirationDate < $now))) {
                 if (!$testMode) {
                     $user->remove();
                 }
@@ -42,6 +43,7 @@ class FixUsersMissingSiteRole
 
                 print "Removed [id: $user->id ";
 
+                // Some of these criteria are never printed because of newer checks for empty
                 if (!empty($user->username)) {
                     print "username: $user->username; ";
                 }
@@ -52,11 +54,12 @@ class FixUsersMissingSiteRole
                     print "emailPending: $user->emailPending; ";
                 }
                 if (!empty($user->last_login)) {
-                    print "lastLogin: $user->last_login;";
+                    print "lastLogin: $user->last_login; ";
                 }
                 if (!empty($user->role)) {
-                    print "role: $user->role;";
+                    print "role: $user->role; ";
                 }
+
                 print "]\n";
             }
         }
@@ -71,7 +74,7 @@ class FixUsersMissingSiteRole
 
 /**
  * Class CustomUserListModel
- * UserListModel ignores users with null username, so we use this derived class to query our custom user list.
+ * UserListModel ignores users with null username, so we use this derived class to query the entire user list.
  */
 class CustomUserListModel extends UserListModel
 {
@@ -80,11 +83,11 @@ class CustomUserListModel extends UserListModel
         MapperListModel::__construct(
             UserModelMongoMapper::instance(),
             array(),
-            array('username', 'id', 'email', 'name', 'emailPending', 'last_login', 'role', 'siteRole')
+            array('username', 'id', 'email', 'name', 'emailPending', 'last_login', 'role', 'siteRole', 'validationExpirationDate')
         );
     }
 
 }
 
 
-FixUsersMissingSiteRole::run('test');
+FixUsersMissingSiteRole::run('run');
