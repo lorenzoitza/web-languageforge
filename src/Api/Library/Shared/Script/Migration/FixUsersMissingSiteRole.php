@@ -19,38 +19,29 @@ class FixUsersMissingSiteRole
     public static function run($mode = 'test')
     {
         $testMode = ($mode != 'run');
-        print("Remove users who have no siteRole AND never logged in AND are not system admins\n\n");
+        // TODO: Add "AND never logged in" criteria DDW 2016-09
+        print("Remove users who have no siteRole AND are not system admins\n\n");
 
         $userlist = new CustomUserListModel();
         $userlist->read();
 
         print "Found " . count($userlist->entries) . " users in the userlist\n";
-        /* Stub to isolate user for test purposes
-        $chris = new UserProfileModel('539fdd8756dd85c329df2ad6');
-        var_dump($chris);
-        $isEmpty = count($chris->siteRole);
-        print "siteRoles: $isEmpty\n";
-        print "empty(last_login) " . empty($chris->last_login) . "\n";
-        print "role: " . $chris->role != SystemRoles::SYSTEM_ADMIN . "\n";
-        */
+
         $usersMissingSiteRole = 0;
-        foreach ($userlist->entries as $userParams) { // foreach existing user
+        foreach ($userlist->entries as $userParams) { // foreach user from the custom list
             // if last_login has any valid meaning, we need UserProfileModel.  Otherwise, can use UserModel
             $user = new UserProfileModel($userParams['id']);
 
-            /*
-            if ((!property_exists($user, 'siteRole') || empty($user->siteRole)) &&
-                (!property_exists($user, 'last_login') || empty($lastLogin)) &&
-                ($user->role != SystemRoles::SYSTEM_ADMIN)) {
-            */
-
-            //if ((count($user->siteRole) == 0) && empty($user->last_login) && ($user->role != SystemRoles::SYSTEM_ADMIN)) {
+            if (($user->role != SystemRoles::SYSTEM_ADMIN) &&
+                (count(array_keys($user->siteRole->getArrayCopy())) == 0)
+            ) {
                 if (!$testMode) {
                     $user->remove();
                 }
                 $usersMissingSiteRole++;
 
-                print "Removed [";
+                print "Removed [id: $user->id ";
+
                 if (!empty($user->username)) {
                     print "username: $user->username; ";
                 }
@@ -64,11 +55,11 @@ class FixUsersMissingSiteRole
                     print "lastLogin: $user->last_login;";
                 }
                 if (!empty($user->role)) {
-                    print "role: $user->role;";}
+                    print "role: $user->role;";
+                }
                 print "]\n";
-
             }
-        //}
+        }
 
         if ($usersMissingSiteRole > 0) {
             print "\n\nRemoved $usersMissingSiteRole users missing siteRole from the users collection\n\n";
@@ -88,11 +79,7 @@ class CustomUserListModel extends UserListModel
     {
         MapperListModel::__construct(
             UserModelMongoMapper::instance(),
-            array('$or' => array(
-                array('siteRole' => null),
-                array('role' => (array('$ne' => SystemRoles::SYSTEM_ADMIN))),
-                //array('last_login' => null)
-            )),
+            array(),
             array('username', 'id', 'email', 'name', 'emailPending', 'last_login', 'role', 'siteRole')
         );
     }
